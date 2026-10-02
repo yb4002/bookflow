@@ -1,0 +1,21 @@
+# Caddy obtains and renews the TLS certificate for $DOMAIN automatically.
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+	# Large enough for logo/cover uploads (the app enforces its own limits).
+	request_body {
+		max_size 5MB
+	}
+	reverse_proxy app:8787 {
+		# Live dashboard updates use Server-Sent Events: don't buffer.
+		flush_interval -1
+	}
+}
+
+# Redirect www to the bare domain (optional; remove if unused).
+www.{$DOMAIN} {
+	redir https://{$DOMAIN}{uri} permanent
+}

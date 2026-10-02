@@ -1,0 +1,42 @@
+# Production: BookFlow + Caddy (automatic HTTPS with Let's Encrypt).
+#   1. Point your domain's DNS (A/AAAA) at this server.
+#   2. cp .env.example .env  — fill in DOMAIN, PUBLIC_BASE_URL and provider keys.
+#   3. docker compose up -d --build
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Caddy is the single reverse proxy in front of the app.
+      TRUST_PROXY: "1"
+    volumes:
+      - bookflow-data:/data
+    expose:
+      - "8787"
+    stop_grace_period: 20s
+    logging:
+      driver: json-file
+      options: { max-size: "20m", max-file: "5" }
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - app
+
+volumes:
+  bookflow-data:
+  caddy-data:
+  caddy-config:

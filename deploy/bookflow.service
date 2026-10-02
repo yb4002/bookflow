@@ -1,0 +1,28 @@
+# systemd unit for running BookFlow without Docker (put Caddy or nginx in front for HTTPS).
+#   sudo useradd --system --home /srv/bookflow bookflow
+#   sudo cp -r dist dist-server package.json /srv/bookflow/ && sudo chown -R bookflow: /srv/bookflow
+#   sudo cp deploy/bookflow.service /etc/systemd/system/ && sudo systemctl enable --now bookflow
+[Unit]
+Description=BookFlow appointment booking
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bookflow
+WorkingDirectory=/srv/bookflow
+EnvironmentFile=/srv/bookflow/.env
+Environment=NODE_ENV=production HOST=127.0.0.1 STATIC_DIR=/srv/bookflow/dist DATABASE_PATH=/srv/bookflow/data/bookflow.sqlite UPLOAD_DIR=/srv/bookflow/data/uploads BACKUP_DIR=/srv/bookflow/data/backups TRUST_PROXY=1
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning dist-server/index.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/srv/bookflow/data
+
+[Install]
+WantedBy=multi-user.target
