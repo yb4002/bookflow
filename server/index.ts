@@ -4,6 +4,7 @@ import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { createApp } from './app'
 import { hashPassword } from './auth/passwords'
+import { purgeRateLimits } from './auth/rateLimit'
 import { purgeExpiredSessions } from './auth/sessions'
 import { createBilling } from './billing/service'
 import { createStripeClient } from './billing/stripe'
@@ -38,6 +39,7 @@ async function main() {
   const applied = migrate(sql)
   if (applied.length) log.info('database migrated', { applied })
   purgeExpiredSessions(sql, new Date())
+  purgeRateLimits(sql)
 
   const passwordHash = await hashPassword(config.demoPassword)
   if (config.demoMode && seedDemoIfEmpty(sql, new Date(), passwordHash)) log.info('seeded demo businesses (Luna Hair Studio, Glow Lab)')
@@ -100,6 +102,8 @@ async function main() {
         },
       },
       { name: 'sessions.purge', intervalMs: 60 * 60_000, run: () => purgeExpiredSessions(sql, new Date()) },
+      // Expired rate-limit windows (the table would otherwise keep one row per IP / email ever seen).
+      { name: 'rateLimits.purge', intervalMs: 15 * 60_000, run: () => purgeRateLimits(sql) },
       ...(config.backupIntervalHours > 0 && config.databasePath !== ':memory:'
         ? [{
             name: 'database.backup',

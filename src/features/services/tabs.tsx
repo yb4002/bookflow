@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Clock, ExternalLink, EyeOff, Globe, Pencil, Plus } from 'lucide-react'
 import type { Business, BusinessSettings, BookingPolicies, LanguageCode, Service, StaffMember } from '@/domain/types'
 import { BookingError, repo, type BookingErrorCode, type BusinessUpdate } from '@/data/repositories'
+import { ApiError } from '@/data/api/client'
 import { Ltr } from '@/components/i18n/Ltr'
 import { Badge } from '@/components/ui/Badge'
 import { Button, buttonClass } from '@/components/ui/Button'
@@ -300,7 +301,8 @@ export function ProfileTab({ business }: { business: Business }) {
 
 /** Publishing status + publish / unpublish + preview of the public booking page. */
 function PublishCard({ business }: { business: Business }) {
-  const { t } = useI18n()
+  const { t, fmt } = useI18n()
+  const { me } = useAuth()
   const s = t.business.publishing
   const toast = useToast()
   const [busy, setBusy] = useState(false)
@@ -311,7 +313,13 @@ function PublishCard({ business }: { business: Business }) {
       await repo.setPublished(!live)
       toast(live ? s.unpublished : s.published)
     } catch (e) {
-      toast(e instanceof BookingError && e.code === 'not_ready' ? t.onboarding.publish.notReady : t.toasts.saveFailed)
+      toast(
+        e instanceof BookingError && e.code === 'not_ready'
+          ? t.onboarding.publish.notReady
+          : e instanceof ApiError && e.code === 'email_unverified'
+            ? fmt(t.onboarding.publish.unverified, { email: me?.user.email ?? '' })
+            : t.toasts.saveFailed,
+      )
     } finally {
       setBusy(false)
     }

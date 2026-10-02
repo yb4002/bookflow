@@ -31,6 +31,15 @@ describe('sign-up', () => {
     expect((await signup(c, { password: 'aaaaaaaaaa' })).json.error.code).toBe('weak_password')
     expect((await signup(c, { businessName: 'X' })).json.error.code).toBe('invalid_name')
     expect((await signup(c, { email: DEMO.luna.ownerEmail.toUpperCase() })).status).toBe(409)
+    expect((await signup(c, { acceptTerms: undefined })).json.error.code).toBe('terms_required')
+    // Honeypot: bots fill the hidden "website" field
+    expect((await signup(c, { email: 'bot@x.example', website: 'http://spam.example' })).json.error.code).toBe('invalid_input')
+  })
+
+  it('records when the terms were accepted', async () => {
+    const { app, sql } = setup()
+    await signup(client(app))
+    expect(sql.get<{ terms_accepted_at: string }>("SELECT terms_accepted_at FROM users WHERE email = 'dana@studio.example'")!.terms_accepted_at).toBe(NOW.toISOString())
   })
 
   it('generates a unique booking link (and a random one for non-Latin names)', async () => {
@@ -66,7 +75,7 @@ describe('multi-tenant isolation for new businesses', () => {
 
 describe('onboarding to a live booking page', () => {
   it('preview while unpublished, then publish and take a real booking within staff hours', async () => {
-    const { app } = setup()
+    const { app, provider } = setup()
     const owner = client(app)
     await signup(owner)
     const slug = (await owner.get('/api/app/business')).json.slug as string
@@ -94,6 +103,13 @@ describe('onboarding to a live booking page', () => {
     expect((await owner.put('/api/app/business/images/cover', { dataUrl: 'data:image/png;base64,' + Buffer.from('<svg onload=alert(1)>').toString('base64') })).json.error.code).toBe('invalid_image')
     expect((await owner.raw('PUT', '/api/app/business/images/cover', JSON.stringify({ dataUrl: 'data:image/png;base64,' + 'A'.repeat(3.2 * 1024 * 1024) }))).status).toBe(413)
     expect((await anon.get('/api/assets/..%2F..%2Fetc/passwd')).status).toBe(404)
+
+    // Publishing needs a verified email: follow the link from the sign-up email
+    expect((await owner.post('/api/app/business/publish', { published: true })).json.error.code).toBe('email_unverified')
+    const mail = provider.outbox.find((m) => m.to === 'dana@studio.example' && m.body.includes('/verify-email?token='))!
+    expect(mail.subject).toBe('Confirm your BookFlow email')
+    expect((await anon.post('/api/auth/verify-email', { token: /token=([\w-]+)/.exec(mail.body)![1] })).status).toBe(200)
+    expect((await owner.get('/api/auth/me')).json.user.emailVerified).toBe(true)
 
     // Not bookable yet: can't publish without a service and someone to do it
     expect((await owner.post('/api/app/business/publish', { published: true })).json.error.code).toBe('not_ready')

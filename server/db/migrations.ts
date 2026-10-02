@@ -445,4 +445,19 @@ ALTER TABLE appointments ADD COLUMN rescheduled_by TEXT CHECK (rescheduled_by IN
 CREATE INDEX appointments_created ON appointments (business_id, created_at);
 `,
   },
+  {
+    id: '0009_signup_security',
+    sql: /* sql */ `
+-- When the user accepted the Terms of Service and Privacy Policy (at sign-up or invitation).
+ALTER TABLE users ADD COLUMN terms_accepted_at TEXT;
+-- Rate-limit windows (login, sign-up, resets, public booking…) that survive restarts and are
+-- shared by every process using this database.
+CREATE TABLE rate_limits (
+  key       TEXT PRIMARY KEY,
+  count     INTEGER NOT NULL,
+  reset_at  INTEGER NOT NULL
+);
+CREATE INDEX rate_limits_reset ON rate_limits (reset_at);
+`,
+  },
 ]

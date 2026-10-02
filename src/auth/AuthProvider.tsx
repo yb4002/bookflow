@@ -26,6 +26,9 @@ export interface SignupInput {
   businessName: string
   locale: 'en' | 'he'
   timezone: string
+  acceptTerms: boolean
+  /** Honeypot (must stay empty). */
+  website?: string
 }
 
 type Status = 'loading' | 'authenticated' | 'anonymous'

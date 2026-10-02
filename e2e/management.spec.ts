@@ -47,7 +47,7 @@ test('the business books a phone appointment for a new client, then moves and ca
 
   // The client got a confirmation with a link to manage the booking online.
   const confirmation = (await outbox(page)).find((m) => m.to === '+15552468100')!
-  expect(confirmation.body).toMatch(/^Hi Noa, you're booked at Luna Hair Studio: Men's haircut with Priya on .+ Manage or cancel: http.+\/book\/luna-hair\/manage\/[A-Z2-9]{6}$/)
+  expect(confirmation.body).toMatch(/^Hi Noa, you're booked at Luna Hair Studio: Men's haircut with Priya on .+ Manage or cancel: http.+\/book\/luna-hair\/manage\/[0-9a-f]{32}$/)
 
   // Find it in the client's profile and open the appointment there.
   await page.goto('/app/customers')
@@ -95,6 +95,7 @@ test('the business books a phone appointment for a new client, then moves and ca
 })
 
 test('clients: add, edit, message, opt out, export and erase', async ({ page }) => {
+  test.slow() // several flows in one test: add/edit, duplicate check, message, opt-out, export, erase
   await loginAsDemo(page)
   await page.goto('/app/customers?lang=en')
   await page.getByRole('button', { name: 'Add client' }).click()

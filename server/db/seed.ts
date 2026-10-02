@@ -62,7 +62,17 @@ function insertOperational(sql: Sql, ds: Dataset) {
       reminder_sent, reference, manage_token, cancelled_at, cancelled_by, cancellation_reason, rescheduled_at, previous_start_at, created_at, updated_at)
     VALUES (:id, :business_id, :customer_id, :staff_id, :service_id, :start_at, :end_at, :status, :source, :price_minor, :notes,
       :reminder_sent, :reference, :manage_token, :cancelled_at, :cancelled_by, :cancellation_reason, :rescheduled_at, :previous_start_at, :created_at, :updated_at)`
-  for (const a of ds.appointments) sql.run(insert, { ...appointmentParams(a, a.cancelledAt ?? a.start), manage_token: a.manageToken ?? newManageToken() })
+  // Each booking was made 1–14 days before its visit and before the data was seeded — never in the
+  // future (the activity feed and "new bookings" figures order by created_at).
+  const seededAt = Date.parse(ds.businesses[0]?.updatedAt ?? new Date().toISOString())
+  const bookedAt = (a: Dataset['appointments'][number], i: number) => {
+    const leadDays = 1 + ((i * 7919) % 14)
+    return new Date(Math.min(Date.parse(a.start), seededAt - 3_600_000) - leadDays * 86_400_000).toISOString()
+  }
+  ds.appointments.forEach((a, i) => {
+    const created = bookedAt(a, i)
+    sql.run(insert, { ...appointmentParams(a, created), updated_at: a.cancelledAt ?? created, manage_token: a.manageToken ?? newManageToken() })
+  })
 }
 
 export function insertUsers(sql: Sql, users: SeedUser[], now: Date) {

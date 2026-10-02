@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addZonedDays, atWallTime, fromLocalDateTime, isSameZonedDay, isValidTimeZone, minutesIntoZonedDay, startOfZonedDay, toLocalDateString, toLocalTimeString, zonedDayDiff, zonedWeekday } from './time'
+import { addZonedDays, atWallTime, fromLocalDateTime, isSameZonedDay, isValidTimeZone, minutesIntoZonedDay, startOfZonedDay, toLocalDateString, toLocalTimeString, zonedDate, zonedDayDiff, zonedHour, zonedMinutes, zonedWeekday } from './time'
 import { createFormatters } from '@/i18n/formatters'
 import { LOCALES } from '@/i18n/config'
 import { catalogs } from '@/i18n/locales'
@@ -22,6 +22,23 @@ describe('business time', () => {
     expect(zonedDayDiff('2026-10-06T23:30:00Z', '2026-10-07T00:30:00Z', 'UTC')).toBe(1)
     expect(zonedDayDiff('2026-10-06T23:30:00Z', '2026-10-07T00:30:00Z', 'America/New_York')).toBe(0)
     expect(minutesIntoZonedDay('2026-10-07T13:15:00Z', 'America/New_York')).toBe(9 * 60 + 15)
+  })
+
+  it('cached calendar helpers agree with TZDate around DST changes and in odd-offset zones', () => {
+    const zones = ['UTC', 'Asia/Jerusalem', 'America/New_York', 'Europe/London', 'Australia/Lord_Howe', 'Asia/Kathmandu', 'Pacific/Chatham', 'America/St_Johns']
+    // Every 37 minutes across both 2026 DST seasons (spring and autumn transitions): not a multiple
+    // of 15, so samples land at every position inside the 15-minute offset-cache buckets.
+    const ranges = [[Date.UTC(2026, 2, 25), Date.UTC(2026, 3, 8)], [Date.UTC(2026, 9, 20), Date.UTC(2026, 10, 3)]]
+    for (const zone of zones) {
+      for (const [from, to] of ranges) {
+        for (let t = from; t < to; t += 37 * 60_000) {
+          const z = zonedDate(t, zone)
+          const d = new Date(t)
+          expect([zonedWeekday(d, zone), zonedHour(d, zone), zonedMinutes(d, zone), minutesIntoZonedDay(d, zone)], `${zone} ${d.toISOString()}`).toEqual([z.getDay(), z.getHours(), z.getMinutes(), z.getHours() * 60 + z.getMinutes()])
+          expect(toLocalDateString(d, zone)).toBe(`${z.getFullYear()}-${String(z.getMonth() + 1).padStart(2, '0')}-${String(z.getDate()).padStart(2, '0')}`)
+        }
+      }
+    }
   })
 
   it('round-trips local dates and times for form inputs', () => {

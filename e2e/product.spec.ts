@@ -65,6 +65,8 @@ test('activity menu shows what clients did; Smart Fill offers carry a booking li
 
   // Smart Fill: offer the demo's freshly cancelled slot to the best match
   const card = page.locator('#smart-fill')
+  // The strongest matches come pre-selected; offer the slot to exactly one client
+  await card.getByRole('button', { name: 'Clear' }).click()
   await card.getByRole('checkbox').first().click()
   await card.getByRole('button', { name: 'Send availability' }).click()
   const drawer = page.getByRole('dialog')

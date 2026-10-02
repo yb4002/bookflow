@@ -15,6 +15,8 @@ export default function SignupPage() {
   const { status, me, signup } = useAuth()
   const navigate = useNavigate()
   const [form, setForm] = useState({ name: '', businessName: '', email: '', password: '' })
+  const [acceptTerms, setAcceptTerms] = useState(false)
+  const [website, setWebsite] = useState('') // honeypot
   const [error, setError] = useState<string>()
   const [busy, setBusy] = useState(false)
   useDocumentTitle(s.title)
@@ -24,10 +26,11 @@ export default function SignupPage() {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    setBusy(true)
     setError(undefined)
+    if (!acceptTerms) return setError(s.errors.terms_required)
+    setBusy(true)
     try {
-      await signup({ ...form, email: form.email.trim(), locale, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone })
+      await signup({ ...form, email: form.email.trim(), locale, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, acceptTerms, website })
       navigate('/onboarding', { replace: true })
     } catch (err) {
       const code = err instanceof ApiError ? err.code : ''
@@ -49,6 +52,20 @@ export default function SignupPage() {
         <Field label={s.businessName}><Input name="businessName" autoComplete="organization" dir="auto" className="h-11" value={form.businessName} onChange={set('businessName')} /></Field>
         <Field label={t.auth.email}><Input type="email" name="email" autoComplete="username" dir="ltr" className={authInputClass} value={form.email} onChange={set('email')} /></Field>
         <Field label={t.auth.password} hint={s.passwordHint}><Input type="password" name="password" autoComplete="new-password" dir="ltr" className={authInputClass} value={form.password} onChange={set('password')} /></Field>
+        {/* Honeypot: hidden from people and assistive tech; bots that fill every field are refused. */}
+        <div aria-hidden="true" className="sr-only">
+          <label>{s.honeypot}<input type="text" name="website" tabIndex={-1} autoComplete="off" value={website} onChange={(e) => setWebsite(e.target.value)} /></label>
+        </div>
+        <label className="flex items-start gap-2.5 text-sm text-slate-600">
+          <input type="checkbox" name="acceptTerms" checked={acceptTerms} onChange={(e) => setAcceptTerms(e.target.checked)} className="mt-0.5 size-4 shrink-0 rounded border-slate-300 accent-brand-600" />
+          <span>
+            {s.agreeBefore}
+            <Link to="/terms" target="_blank" className="font-medium text-brand-600 underline underline-offset-2 hover:text-brand-700">{s.termsLink}</Link>
+            {s.agreeMiddle}
+            <Link to="/privacy" target="_blank" className="font-medium text-brand-600 underline underline-offset-2 hover:text-brand-700">{s.privacyLink}</Link>
+            {s.agreeAfter}
+          </span>
+        </label>
         <Button type="submit" size="lg" className="w-full" disabled={busy}>{busy ? s.submitting : s.submit}</Button>
         <p className="text-center text-xs text-slate-500">{s.note}</p>
       </form>

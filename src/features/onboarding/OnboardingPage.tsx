@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Check, ExternalLink, LogOut, Pencil, Plus, Rocket } from 'lucide-react'
+import { ArrowLeft, Check, CheckCircle2, ExternalLink, LogOut, MailCheck, Pencil, Plus, Rocket } from 'lucide-react'
 import type { Business, BookingPolicies, CurrencyCode, LanguageCode, Service, StaffMember, WeeklyHours } from '@/domain/types'
 import { useAuth } from '@/auth/AuthProvider'
 import { Logo } from '@/components/brand/Logo'
@@ -11,6 +11,7 @@ import { Card } from '@/components/ui/Card'
 import { Field, Input, inputClass } from '@/components/ui/Input'
 import { Skeleton } from '@/components/ui/Skeleton'
 import { BookingError, repo, type BusinessUpdate } from '@/data/repositories'
+import { ApiError } from '@/data/api/client'
 import { useQuery } from '@/hooks/useQuery'
 import { LOCALE_CODES, LOCALES, useBusinessLocale, useDocumentTitle, useI18n } from '@/i18n'
 import { cn } from '@/lib/cn'
@@ -103,7 +104,13 @@ export default function OnboardingPage() {
       }
       navigate('/app', { replace: true })
     } catch (e) {
-      setError(e instanceof BookingError && e.code === 'not_ready' ? o.publish.notReady : t.toasts.saveFailed)
+      setError(
+        e instanceof BookingError && e.code === 'not_ready'
+          ? o.publish.notReady
+          : e instanceof ApiError && e.code === 'email_unverified'
+            ? fmt(o.publish.unverified, { email: me?.user.email ?? '' })
+            : t.toasts.saveFailed,
+      )
       setSaving(false)
     }
   }
@@ -406,6 +413,8 @@ function PublishStep({ business, saving, error, back, onFinish }: StepProps & Pi
   const { t } = useI18n()
   const o = t.onboarding
   const p = t.services.profile
+  const { me } = useAuth()
+  const verified = me?.user.emailVerified !== false
   const [slug, setSlug] = useState(business.slug)
   const [slugError, setSlugError] = useState<string>()
   const [savingSlug, setSavingSlug] = useState(false)
@@ -430,11 +439,12 @@ function PublishStep({ business, saving, error, back, onFinish }: StepProps & Pi
           {back}
           <div className="flex flex-wrap gap-2">
             <Button variant="ghost" disabled={saving} onClick={() => onFinish(false)}>{o.publish.later}</Button>
-            <Button size="lg" disabled={saving} onClick={() => onFinish(true)}><Rocket className="size-4" /> {saving ? o.publish.publishing : o.publish.publish}</Button>
+            <Button size="lg" disabled={saving || !verified} onClick={() => onFinish(true)}><Rocket className="size-4" /> {saving ? o.publish.publishing : o.publish.publish}</Button>
           </div>
         </>
       }
     >
+      <EmailCheck />
       <Card className="space-y-5 p-5">
         <Field label={o.publish.link} hint={slugError ? undefined : p.bookingUrlHint}>
           <div className="flex gap-2" dir="ltr">
@@ -454,5 +464,61 @@ function PublishStep({ business, saving, error, back, onFinish }: StepProps & Pi
         </a>
       </Card>
     </Frame>
+  )
+}
+
+/**
+ * Publishing needs a confirmed email address. Shows where the link went, re-sends it, and
+ * re-checks when the owner comes back from their inbox (tab focus) or says they've confirmed.
+ */
+function EmailCheck() {
+  const { t, fmt, locale } = useI18n()
+  const o = t.onboarding.publish
+  const { me, refresh, resendVerification } = useAuth()
+  const [sent, setSent] = useState(false)
+  const [checking, setChecking] = useState(false)
+  const unverified = me?.user.emailVerified === false
+  useEffect(() => {
+    if (!unverified) return
+    const onFocus = () => void refresh()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [unverified, refresh])
+  if (!me) return null
+  if (!unverified) {
+    return (
+      <p role="status" className="mb-4 flex items-center gap-2 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-900 ring-1 ring-emerald-200">
+        <CheckCircle2 className="size-4 shrink-0 text-emerald-600" /> {o.verified}
+      </p>
+    )
+  }
+  return (
+    <Card className="mb-4 space-y-3 p-5 ring-amber-200" data-testid="email-check">
+      <div className="flex gap-3">
+        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-600"><MailCheck className="size-5" /></span>
+        <div>
+          <p className="text-sm font-semibold text-slate-900">{o.verifyTitle}</p>
+          <p className="mt-1 text-sm text-slate-600">{fmt(o.verifyBody, { email: me.user.email })}</p>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 ps-12">
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={checking}
+          onClick={async () => {
+            setChecking(true)
+            await refresh().finally(() => setChecking(false))
+          }}
+        >
+          {o.verifyCheck}
+        </Button>
+        {sent ? (
+          <span role="status" className="text-xs text-slate-600">{o.verifySent}</span>
+        ) : (
+          <Button size="sm" variant="ghost" onClick={async () => (await resendVerification(locale).catch(() => undefined), setSent(true))}>{o.verifyResend}</Button>
+        )}
+      </div>
+    </Card>
   )
 }

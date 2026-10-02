@@ -94,10 +94,12 @@ export function createApp({ sql, now = () => new Date(), demoMode = false, testM
   const counters = { requests: 0, errors5xx: 0, rateLimited: 0 }
   // Business logic emits domain events; the engine turns them into outbox rows (same transaction).
   const engine = providers ? new NotificationEngine({ sql, providers, now, publicBaseUrl, events, log: testMode ? undefined : (m) => logger.info(m) }) : undefined
-  const loginLimiter = new RateLimiter(10, 15 * 60_000)
-  const signupLimiter = new RateLimiter(10, 60 * 60_000)
-  const resetLimiter = new RateLimiter(5, 60 * 60_000)
-  const inviteViewLimiter = new RateLimiter(60, 15 * 60_000)
+  const loginLimiter = new RateLimiter(10, 15 * 60_000, { sql, name: 'login' })
+  // Per account, whatever the client address: slows distributed password guessing.
+  const accountLimiter = new RateLimiter(50, 60 * 60_000, { sql, name: 'account' })
+  const signupLimiter = new RateLimiter(10, 60 * 60_000, { sql, name: 'signup' })
+  const resetLimiter = new RateLimiter(5, 60 * 60_000, { sql, name: 'reset' })
+  const inviteViewLimiter = new RateLimiter(60, 15 * 60_000, { sql, name: 'inviteView' })
   const images = uploadsDir ? createFileImageStore(uploadsDir) : undefined
   // Equalizes timing for unknown emails (no account enumeration via response time).
   const dummyHash = hashPassword('not-a-real-password')
@@ -207,7 +209,7 @@ export function createApp({ sql, now = () => new Date(), demoMode = false, testM
     const { email, password } = await body<{ email?: string; password?: string }>(c)
     if (typeof email !== 'string' || typeof password !== 'string' || !email || !password) return fail(c, 400, 'invalid_input')
     const key = `${clientKey(c)}|${email.toLowerCase()}`
-    if (!loginLimiter.attempt(key)) return fail(c, 429, 'rate_limited')
+    if (!loginLimiter.attempt(key) || !accountLimiter.attempt(email.trim().toLowerCase())) return fail(c, 429, 'rate_limited')
 
     const user = sql.get<{ id: string; password_hash: string }>('SELECT id, password_hash FROM users WHERE email = ?', [email.trim()])
     const ok = user ? await verifyPassword(password, user.password_hash) : (await verifyPassword(password, await dummyHash), false)
@@ -230,8 +232,10 @@ export function createApp({ sql, now = () => new Date(), demoMode = false, testM
   /** Self-service sign-up: creates the user, their business and an owner session. */
   app.post('/api/auth/signup', async (c) => {
     if (!signupLimiter.attempt(clientKey(c))) return fail(c, 429, 'rate_limited')
-    const input = await body<SignupInput>(c)
+    const input = await body<SignupInput & { website?: unknown }>(c)
     if ([input.name, input.email, input.password, input.businessName].some((v) => typeof v !== 'string')) return fail(c, 400, 'invalid_input')
+    // Honeypot: a field people never see (bots fill every input).
+    if (input.website) return fail(c, 400, 'invalid_input')
     const { userId, businessId } = await signUp(sql, input, now(), isValidTimeZone)
     billing?.startTrial(businessId)
     const profile = startSession(c, userId, businessId)
@@ -314,7 +318,7 @@ export function createApp({ sql, now = () => new Date(), demoMode = false, testM
     return c.text(lines.map(([k, v]) => `${k} ${v}`).join('\n') + '\n', 200, { 'content-type': 'text/plain; version=0.0.4' })
   })
   /** Front-end errors (crashes, unhandled rejections) reported by browsers — logged for monitoring. */
-  const clientErrorLimiter = new RateLimiter(20, 60_000)
+  const clientErrorLimiter = new RateLimiter(20, 60_000, { sql, name: 'clientErrors' })
   app.post('/api/client-errors', async (c) => {
     if (!clientErrorLimiter.attempt(clientKey(c))) return fail(c, 429, 'rate_limited')
     const e = await body<{ message?: string; stack?: string; url?: string; source?: string }>(c)
@@ -410,7 +414,12 @@ export function createApp({ sql, now = () => new Date(), demoMode = false, testM
   })
   business.post('/business/publish', async (c) => {
     const { published } = await body<{ published: boolean }>(c)
-    return requireOwner(c) ?? c.json(await c.var.repo.setPublished(published === true))
+    const denied = requireOwner(c)
+    if (denied) return denied
+    // A page goes live only once its owner has proven they control the account's email address
+    // (stops throwaway or impersonating sign-ups from taking bookings under someone else's name).
+    if (published === true && !sql.get('SELECT 1 FROM users WHERE id = ? AND email_verified_at IS NOT NULL', [c.var.auth.user.id])) return fail(c, 403, 'email_unverified')
+    return c.json(await c.var.repo.setPublished(published === true))
   })
   business.post('/business/onboarding/complete', async (c) => requireOwner(c) ?? c.json(await c.var.repo.completeOnboarding()))
 
@@ -562,8 +571,8 @@ export function createApp({ sql, now = () => new Date(), demoMode = false, testM
   })
   const days = (v: string | undefined, max = 62) => Math.min(Math.max(Number(v) || 14, 1), max)
   // Abuse limits: manage-link lookups (no guessing) and new bookings (no spam) per client IP.
-  const lookupLimiter = new RateLimiter(120, 10 * 60_000)
-  const bookingLimiter = new RateLimiter(20, 60 * 60_000)
+  const lookupLimiter = new RateLimiter(120, 10 * 60_000, { sql, name: 'lookup' })
+  const bookingLimiter = new RateLimiter(20, 60 * 60_000, { sql, name: 'booking' })
   pub.use('/:slug/bookings/*', async (c, next) => (lookupLimiter.attempt(clientKey(c)) ? next() : fail(c, 429, 'rate_limited')))
   pub.use('/:slug/bookings', async (c, next) => (c.req.method !== 'POST' || bookingLimiter.attempt(clientKey(c)) ? next() : fail(c, 429, 'rate_limited')))
   pub.get('/:slug', async (c) => {
@@ -601,7 +610,7 @@ export function createApp({ sql, now = () => new Date(), demoMode = false, testM
   if (testMode) {
     app.post('/api/__test__/reset', (c) => {
       onTestReset?.()
-      for (const l of [loginLimiter, signupLimiter, resetLimiter, inviteViewLimiter, lookupLimiter, bookingLimiter]) l.clear()
+      sql.run('DELETE FROM rate_limits')
       providers?.providers.forEach((p) => (p as { clear?: () => void }).clear?.())
       return c.json({ ok: true })
     })

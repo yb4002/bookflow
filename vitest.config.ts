@@ -9,6 +9,7 @@ export default mergeConfig(
       include: ['src/**/*.test.ts', 'server/**/*.test.ts'],
       // Several suites seed full demo databases; give slow machines (e.g. this phone) room.
       testTimeout: 30_000,
+      hookTimeout: 30_000,
       // Deterministic dates regardless of the machine running the tests.
       env: { TZ: 'UTC' },
     },

@@ -75,6 +75,7 @@ test('a new owner confirms their email from the verification link', async ({ pag
   await page.getByLabel('Business name').fill('Tal Barbers')
   await page.getByLabel('Email').fill(email)
   await page.getByLabel('Password').fill('very-secret-pw')
+  await page.getByRole('checkbox').check() // Terms of Service & Privacy Policy
   await page.getByRole('button', { name: 'Create account' }).click()
   await expect(page).toHaveURL(/\/onboarding$/)
   const mail = await lastMailTo(page, email)

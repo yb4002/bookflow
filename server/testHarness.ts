@@ -73,8 +73,8 @@ export function client(app: App) {
   }
 }
 
-export const signup = (c: ReturnType<typeof client>, over: Record<string, string> = {}) =>
-  c.post('/api/auth/signup', { name: 'Dana Levi', email: 'dana@studio.example', password: 'very-secret-pw', businessName: 'Studio Dana', locale: 'en', timezone: 'Europe/London', ...over })
+export const signup = (c: ReturnType<typeof client>, over: Record<string, unknown> = {}) =>
+  c.post('/api/auth/signup', { name: 'Dana Levi', email: 'dana@studio.example', password: 'very-secret-pw', businessName: 'Studio Dana', locale: 'en', timezone: 'Europe/London', acceptTerms: true, ...over })
 
 
 /** Adds a user with a membership (e.g. a staff login) to a business. */

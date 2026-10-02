@@ -7,6 +7,7 @@ const PNG = Buffer.from(
 )
 
 test('a new business signs up, completes onboarding, publishes and takes a real booking', async ({ page, browser }) => {
+  test.slow() // the whole journey in one test: sign-up, 8 wizard steps, email confirmation, a booking
   const email = `owner-${Date.now()}@example.com`
 
   // 1. Sign up
@@ -15,6 +16,7 @@ test('a new business signs up, completes onboarding, publishes and takes a real 
   await page.getByLabel('Business name').fill('Studio Dana')
   await page.getByLabel('Email').fill(email)
   await page.getByLabel('Password').fill('very-secret-pw')
+  await page.getByRole('checkbox').check() // Terms of Service & Privacy Policy
   await page.getByRole('button', { name: 'Create account' }).click()
   await expect(page).toHaveURL(/\/onboarding$/)
   await expect(page.getByText('Welcome, Dana!')).toBeVisible()
@@ -91,6 +93,19 @@ test('a new business signs up, completes onboarding, publishes and takes a real 
   await visitor.goto(`/book/${slug}?lang=en`)
   await expect(visitor.getByText('Booking page not found')).toBeVisible()
 
+  // Publishing waits for a confirmed email: follow the link from the sign-up email
+  await expect(page.getByTestId('email-check')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Publish & open dashboard' })).toBeDisabled()
+  const outbox = (await (await page.request.get('/api/__test__/outbox')).json()) as { to: string; body: string }[]
+  const verifyMail = outbox.find((m) => m.to === email && m.body.includes('/verify-email?token='))!
+  const verifyLink = new URL(/https?:\/\/\S+verify-email\?token=[\w-]+/.exec(verifyMail.body)![0])
+  const inbox = await page.context().newPage()
+  await inbox.goto(verifyLink.pathname + verifyLink.search)
+  await expect(inbox.getByText('Thanks — your email is confirmed.')).toBeVisible()
+  await inbox.close()
+  await page.getByRole('button', { name: 'I’ve confirmed it' }).click()
+  await expect(page.getByText('Email confirmed — you’re ready to publish.')).toBeVisible()
+
   await page.getByRole('button', { name: 'Publish & open dashboard' }).click()
   await expect(page).toHaveURL(/\/app$/)
   await expect(page.getByRole('heading', { name: /Dana$/ })).toBeVisible()
@@ -129,6 +144,7 @@ test('password reset by email', async ({ page }) => {
   await page.getByLabel('Business name').fill('Rina Nails')
   await page.getByLabel('Email').fill(email)
   await page.getByLabel('Password').fill('first-password-1')
+  await page.getByRole('checkbox').check() // Terms of Service & Privacy Policy
   await page.getByRole('button', { name: 'Create account' }).click()
   await expect(page).toHaveURL(/\/onboarding$/)
   await page.getByRole('button', { name: 'Log out' }).click()
@@ -141,7 +157,8 @@ test('password reset by email', async ({ page }) => {
   await expect(page.getByRole('status')).toContainText('reset link is on its way')
 
   const outbox = (await (await page.request.get('/api/__test__/outbox')).json()) as { to: string; body: string; channel: string }[]
-  const mail = outbox.find((m) => m.to === email && m.channel === 'email')!
+  // Sign-up also sent a verification email to this address — take the reset email.
+  const mail = outbox.find((m) => m.to === email && m.channel === 'email' && m.body.includes('/reset-password?token='))!
   const link = /https?:\/\/[^\s]+\/reset-password\?token=[\w-]+/.exec(mail.body)![0]
   await page.goto(new URL(link).pathname + new URL(link).search)
   await page.getByLabel('New password').fill('second-password-2')
@@ -160,6 +177,7 @@ test('Hebrew sign-up runs the wizard right-to-left', async ({ page }) => {
   await page.getByLabel('שם העסק').fill('סטודיו נוגה')
   await page.getByLabel('אימייל').fill(`noga-${Date.now()}@example.com`)
   await page.getByLabel('סיסמה').fill('very-secret-pw')
+  await page.getByRole('checkbox').check() // Terms of Service & Privacy Policy
   await page.getByRole('button', { name: 'יצירת חשבון' }).click()
   await expect(page).toHaveURL(/\/onboarding$/)
   await expect(page.getByRole('heading', { name: 'ספרו ללקוחות על העסק' })).toBeVisible()

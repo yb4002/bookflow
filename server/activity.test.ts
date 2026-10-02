@@ -12,7 +12,6 @@ describe('activity feed', () => {
     const { app, advance } = setup()
     const owner = client(app)
     await owner.post('/api/auth/login', { email: DEMO.luna.ownerEmail, password: PASSWORD })
-    const before = (await owner.get('/api/app/activity')).json as unknown[]
 
     const anon = client(app)
     const [s1, , , s4] = await freeSlot(anon)
@@ -29,7 +28,8 @@ describe('activity feed', () => {
     expect(mine.map((i) => i.type)).toEqual(['cancelled', 'rescheduled', 'booked'])
     expect(mine[0].serviceName).toBe("Men's haircut")
     expect(feed.some((i) => i.customerName === 'Phone Client')).toBe(false)
-    expect(feed.length).toBeGreaterThanOrEqual(before.length + 3)
+    // Newest first: the three things this client just did head the (capped) feed.
+    expect(feed.slice(0, 3).map((i) => i.customerName)).toEqual(['Feed Tester', 'Feed Tester', 'Feed Tester'])
 
     // Another business sees none of it
     const glow = client(app)

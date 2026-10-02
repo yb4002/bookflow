@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
-import { addDays, isSameDay, startOfDay, subDays } from 'date-fns'
-import { inZone } from '@/domain/time'
+import { addDays, startOfDay, subDays } from 'date-fns'
+import { inZone, zonedDayKey } from '@/domain/time'
 import { AlertTriangle, CalendarCheck, CircleDollarSign, Clock, Plus, Star, UserPlus, UserX } from 'lucide-react'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
@@ -57,7 +57,8 @@ export default function DashboardPage() {
     const { appointments: all, customers, business, staff, services } = data
     const inRange = (from: Date, to: Date) => all.filter((a) => new Date(a.start) >= from && new Date(a.start) < to)
 
-    const todays = all.filter((a) => isSameDay(a.start, today, z))
+    const todayKey = zonedDayKey(today, zone)
+    const todays = all.filter((a) => zonedDayKey(a.start, zone) === todayKey)
     const upcomingToday = todays.filter((a) => new Date(a.start) > now && a.status !== 'cancelled')
 
     const week = inRange(subDays_(today, 6), addDays_(today, 1))
@@ -89,7 +90,7 @@ export default function DashboardPage() {
 
     const pending = all.filter((a) => a.status === 'pending' && new Date(a.start) > now).length
     const atRisk = customers.filter((c) => c.tags.includes('At risk') || (c.lastVisit && new Date(c.lastVisit) < subDays_(today, 60) && !c.nextAppointment)).length
-    const yesterdayDone = all.filter((a) => a.status === 'completed' && isSameDay(a.start, subDays_(today, 1), z)).length
+    const yesterdayDone = all.filter((a) => a.status === 'completed' && zonedDayKey(a.start, zone) === todayKey - 1).length
     const noShowsWeek = week.filter((a) => a.status === 'no_show').length
 
     const a = d.attention
@@ -125,7 +126,7 @@ export default function DashboardPage() {
         description={fmt(d.subtitle, { date: f.dateLong(now), business: data?.business.name ?? me?.business.name ?? '' })}
         actions={
           <>
-            <ShareBookingLink slug={data?.business.slug ?? 'luna-hair'} />
+            {data && <ShareBookingLink slug={data.business.slug} />}
             <Button onClick={() => openBooking()}><Plus className="size-4" /> {d.newAppointment}</Button>
           </>
         }

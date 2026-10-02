@@ -82,9 +82,11 @@ export function AppShell() {
         {me?.business.demo && <span className="rounded-md bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-600/20">{t.shell.previewBadge}</span>}
         <div className="ms-auto flex items-center gap-1.5">
           <LanguageSwitcher compact />
-          <a className="hidden items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 sm:inline-flex" href={bookingPath(business?.slug ?? 'luna-hair')} target="_blank" rel="noopener">
-            <ExternalLink className="size-4" /> {t.shell.bookingPage}
-          </a>
+          {business && (
+            <a className="hidden items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 sm:inline-flex" href={bookingPath(business.slug)} target="_blank" rel="noopener">
+              <ExternalLink className="size-4" /> {t.shell.bookingPage}
+            </a>
+          )}
           <ActivityMenu />
           <UserMenu name={me?.user.name ?? ''} businessName={businessName} seed={me?.user.id} onLogout={logout} className="lg:hidden" />
         </div>

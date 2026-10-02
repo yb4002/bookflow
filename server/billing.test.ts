@@ -58,7 +58,7 @@ describe('subscriptions', () => {
   })
 
   it('a new business gets a 14-day trial; afterwards online booking pauses until it subscribes', async () => {
-    const { app, advance, stripe, now } = billingSetup()
+    const { app, advance, stripe, now, sql } = billingSetup()
     const owner = client(app)
     await signup(owner)
     const trial = (await owner.get('/api/app/billing')).json
@@ -68,6 +68,7 @@ describe('subscriptions', () => {
     // Make the business bookable
     const svc = (await owner.post('/api/app/services', { name: 'Cut', category: 'Cuts', description: '', durationMin: 30, bufferMin: 0, price: 40, active: true })).json
     await owner.post('/api/app/staff', { name: 'Dana Levi', role: 'Owner', color: 'indigo', serviceIds: [svc.id] })
+    sql.run("UPDATE users SET email_verified_at = ? WHERE email = 'dana@studio.example'", [now().toISOString()])
     await owner.post('/api/app/business/publish', { published: true })
     const slug = (await owner.get('/api/app/business')).json.slug
 

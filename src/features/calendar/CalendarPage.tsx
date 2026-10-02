@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { addDays, endOfWeek, isSameDay, startOfDay, startOfWeek } from 'date-fns'
-import { atWallTime, inZone, instant, zonedWeekday } from '@/domain/time'
+import { atWallTime, inZone, instant, zonedDayKey, zonedWeekday } from '@/domain/time'
 import { useAppointmentForm } from '@/features/appointments/AppointmentForm'
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react'
 import type { AppointmentStatus, AppointmentView } from '@/domain/types'
@@ -67,7 +67,7 @@ export default function CalendarPage() {
           subtitle: f.weekdayShort(d),
           highlight: isToday(d),
           closed: !business.hours[zonedWeekday(d, zone)].open,
-          events: visible.filter((a) => isSameDay(a.start, d, z)),
+          events: visible.filter((a) => zonedDayKey(a.start, zone) === zonedDayKey(d, zone)),
         }
       })
     }

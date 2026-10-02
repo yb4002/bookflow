@@ -38,32 +38,63 @@ export function addZonedDays(d: Date, n: number, zone: TimeZone): Date {
   return instant(new TZDate(z.getFullYear(), z.getMonth(), z.getDate() + n, 0, 0, 0, 0, zone))
 }
 
+/*
+ * Hot-path helpers. Calendar questions about many instants (dashboards, Smart Fill ranking,
+ * grouping by day) only need the zone's UTC offset at each instant. Offsets are cached per
+ * zone in 15-minute buckets (every real-world transition falls on a 15-minute boundary), so
+ * these cost a Map lookup instead of a TZDate construction.
+ */
+const BUCKET_MS = 15 * 60_000
+const DAY_MS = 86_400_000
+const offsetFormats = new Map<TimeZone, Intl.DateTimeFormat>()
+const offsetCache = new Map<TimeZone, Map<number, number>>()
+
+/** UTC offset of `zone` at instant `t` (ms since epoch), in milliseconds (e.g. +3 h = 10_800_000). */
+export function zoneOffsetMs(t: number, zone: TimeZone): number {
+  let cache = offsetCache.get(zone)
+  if (!cache) offsetCache.set(zone, (cache = new Map()))
+  const bucket = Math.floor(t / BUCKET_MS)
+  const hit = cache.get(bucket)
+  if (hit !== undefined) return hit
+  let fmt = offsetFormats.get(zone)
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-US', { timeZone: zone, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' })
+    offsetFormats.set(zone, fmt)
+  }
+  const at = bucket * BUCKET_MS
+  const p: Record<string, number> = {}
+  for (const part of fmt.formatToParts(at)) if (part.type !== 'literal') p[part.type] = Number(part.value)
+  const offset = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute) - at
+  if (cache.size > 100_000) cache.clear() // bound memory in long-running processes
+  cache.set(bucket, offset)
+  return offset
+}
+
+const ms = (d: Date | string | number) => (typeof d === 'string' ? Date.parse(d) : +d)
+/** Wall-clock milliseconds of an instant in `zone` (as if that wall clock were UTC). */
+const wallMs = (d: Date | string | number, zone: TimeZone) => {
+  const t = ms(d)
+  return t + zoneOffsetMs(t, zone)
+}
+
+/** The calendar day of an instant in `zone`, as a day number (equal numbers = same local day). */
+export const zonedDayKey = (d: Date | string | number, zone: TimeZone) => Math.floor(wallMs(d, zone) / DAY_MS)
+
 /** Weekday (0 = Sunday) of an instant in `zone`. */
-export const zonedWeekday = (d: Date | string, zone: TimeZone) => zonedDate(d, zone).getDay() as 0 | 1 | 2 | 3 | 4 | 5 | 6
+export const zonedWeekday = (d: Date | string, zone: TimeZone) => (((zonedDayKey(d, zone) + 4) % 7) + 7) % 7 as 0 | 1 | 2 | 3 | 4 | 5 | 6
 
 /** Hours/minutes of an instant in `zone`. */
-export const zonedHour = (d: Date | string, zone: TimeZone) => zonedDate(d, zone).getHours()
-export const zonedMinutes = (d: Date | string, zone: TimeZone) => zonedDate(d, zone).getMinutes()
+export const zonedHour = (d: Date | string, zone: TimeZone) => Math.floor((((wallMs(d, zone) % DAY_MS) + DAY_MS) % DAY_MS) / 3_600_000)
+export const zonedMinutes = (d: Date | string, zone: TimeZone) => Math.floor((((wallMs(d, zone) % 3_600_000) + 3_600_000) % 3_600_000) / 60_000)
 
 /** True when both instants fall on the same calendar day in `zone`. */
-export const isSameZonedDay = (a: Date | string, b: Date | string, zone: TimeZone) => {
-  const x = zonedDate(a, zone)
-  const y = zonedDate(b, zone)
-  return x.getFullYear() === y.getFullYear() && x.getMonth() === y.getMonth() && x.getDate() === y.getDate()
-}
+export const isSameZonedDay = (a: Date | string, b: Date | string, zone: TimeZone) => zonedDayKey(a, zone) === zonedDayKey(b, zone)
 
 /** Whole calendar days from `a` to `b` in `zone` (b − a). */
-export function zonedDayDiff(a: Date | string, b: Date | string, zone: TimeZone) {
-  const x = zonedDate(a, zone)
-  const y = zonedDate(b, zone)
-  return Math.round((Date.UTC(y.getFullYear(), y.getMonth(), y.getDate()) - Date.UTC(x.getFullYear(), x.getMonth(), x.getDate())) / 86_400_000)
-}
+export const zonedDayDiff = (a: Date | string, b: Date | string, zone: TimeZone) => zonedDayKey(b, zone) - zonedDayKey(a, zone)
 
 /** Minutes since local midnight in `zone` (for positioning on a day grid). */
-export const minutesIntoZonedDay = (d: Date | string, zone: TimeZone) => {
-  const z = zonedDate(d, zone)
-  return z.getHours() * 60 + z.getMinutes()
-}
+export const minutesIntoZonedDay = (d: Date | string, zone: TimeZone) => Math.floor((((wallMs(d, zone) % DAY_MS) + DAY_MS) % DAY_MS) / 60_000)
 
 /** Validates an IANA zone name. */
 export function isValidTimeZone(zone: unknown): zone is TimeZone {

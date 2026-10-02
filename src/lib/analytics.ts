@@ -1,5 +1,5 @@
-import { addDays, addMinutes, differenceInMinutes, isBefore, isSameDay, max, startOfDay, subDays } from 'date-fns'
-import { atWallTime, inZone, instant, zonedWeekday } from '@/domain/time'
+import { addDays, addMinutes, differenceInMinutes, isBefore, max, startOfDay, subDays } from 'date-fns'
+import { atWallTime, inZone, instant, zonedDayKey, zonedWeekday } from '@/domain/time'
 import type { AppointmentView, Business, StaffMember } from '@/domain/types'
 
 /** Pure metric functions — the same logic can later run server-side. Day boundaries use the business's time zone. */
@@ -19,9 +19,18 @@ export function noShowRate(appts: AppointmentView[]) {
 export function dailyBookings(appts: AppointmentView[], days: number, end: Date, zone: string) {
   const z = inZone(zone)
   const first = startOfDay(subDays(end, days - 1, z), z)
+  // Group once by local day (not once per day × appointment).
+  const byDay = new Map<number, AppointmentView[]>()
+  for (const a of appts) {
+    if (a.status === 'cancelled') continue
+    const key = zonedDayKey(a.start, zone)
+    const list = byDay.get(key)
+    if (list) list.push(a)
+    else byDay.set(key, [a])
+  }
   return Array.from({ length: days }, (_, i) => {
     const day = addDays(first, i, z)
-    const items = appts.filter((a) => isSameDay(a.start, day, z) && a.status !== 'cancelled')
+    const items = byDay.get(zonedDayKey(day, zone)) ?? []
     return { date: instant(day), count: items.length, revenue: revenue(items) }
   })
 }
@@ -46,16 +55,17 @@ export function findOpenSlots(
   now = new Date(),
   zone: string,
 ): OpenSlot[] {
-  const z = inZone(zone)
   const hours = business.hours[zonedWeekday(day, zone)]
   if (!hours.open) return []
   const open = max([atWallTime(day, hours.start, zone), now])
   const close = atWallTime(day, hours.end, zone)
   const slots: OpenSlot[] = []
+  const dayKey = zonedDayKey(day, zone)
+  const thatDay = appts.filter((a) => a.status !== 'cancelled' && a.status !== 'no_show' && zonedDayKey(a.start, zone) === dayKey)
 
   for (const s of staff) {
-    const busy = appts
-      .filter((a) => a.staffId === s.id && isSameDay(a.start, day, z) && a.status !== 'cancelled' && a.status !== 'no_show')
+    const busy = thatDay
+      .filter((a) => a.staffId === s.id)
       .map((a) => ({ start: new Date(a.start), end: addMinutes(new Date(a.end), a.service.bufferMin) }))
       .sort((x, y) => x.start.getTime() - y.start.getTime())
     let cursor = open

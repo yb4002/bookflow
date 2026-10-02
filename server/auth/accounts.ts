@@ -7,7 +7,7 @@ import { defaultPhoneCountry } from '../../src/domain/phone'
 
 /** Sign-up and password-reset rules (no HTTP here — see app.ts). */
 
-export type AccountErrorCode = 'invalid_email' | 'weak_password' | 'invalid_name' | 'email_taken' | 'invalid_token'
+export type AccountErrorCode = 'invalid_email' | 'weak_password' | 'invalid_name' | 'email_taken' | 'invalid_token' | 'terms_required'
 export class AccountError extends Error {
   constructor(public code: AccountErrorCode) {
     super(code)
@@ -27,6 +27,8 @@ export interface SignupInput {
   businessName: string
   locale?: LanguageCode
   timezone?: string
+  /** The Terms of Service and Privacy Policy were accepted (required). */
+  acceptTerms?: boolean
 }
 
 /** Sensible starting hours: Sunday–Thursday in Hebrew, Monday–Friday otherwise, 09:00–17:00. */
@@ -54,6 +56,7 @@ export async function signUp(sql: Sql, input: SignupInput, now: Date, isValidTz:
   if (!validEmail(email)) throw new AccountError('invalid_email')
   if (name.length < 2 || name.length > 80 || businessName.length < 2 || businessName.length > 80) throw new AccountError('invalid_name')
   if (!strongEnough(input.password)) throw new AccountError('weak_password')
+  if (input.acceptTerms !== true) throw new AccountError('terms_required')
   if (sql.get('SELECT 1 FROM users WHERE email = ?', [email])) throw new AccountError('email_taken')
 
   const passwordHash = await hashPassword(input.password) // async — done before the write transaction
@@ -65,7 +68,7 @@ export async function signUp(sql: Sql, input: SignupInput, now: Date, isValidTz:
 
   sql.transaction(() => {
     if (sql.get('SELECT 1 FROM users WHERE email = ?', [email])) throw new AccountError('email_taken') // race-safe re-check
-    sql.run('INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)', [userId, email, name, passwordHash, ts])
+    sql.run('INSERT INTO users (id, email, name, password_hash, created_at, terms_accepted_at) VALUES (?, ?, ?, ?, ?, ?)', [userId, email, name, passwordHash, ts, ts])
     sql.run(
       `INSERT INTO businesses (id, name, description, category, timezone, phone, email, address, created_at, updated_at)
        VALUES (?, ?, '', '', ?, '', ?, '', ?, ?)`,

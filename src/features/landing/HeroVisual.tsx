@@ -1,5 +1,5 @@
 import { set } from 'date-fns'
-import { Bell, Check, Sparkles, TrendingUp } from 'lucide-react'
+import { Bell, Check, TrendingUp } from 'lucide-react'
 import { useI18n } from '@/i18n'
 
 /** Row styling for the illustrative schedule; text comes from the locale file. */
@@ -56,12 +56,6 @@ export function HeroVisual() {
           <p className="text-xs font-semibold text-slate-900">{v.reminderTitle}</p>
           <p className="text-[11px] text-slate-500">{fmt(v.reminderBody, { time: f.time(at(12)) })}</p>
         </div>
-      </div>
-
-      <div className="absolute -start-14 top-1/2 hidden -translate-y-1/2 flex-col items-center gap-1 rounded-xl bg-slate-900 px-3 py-3 text-white shadow-pop xl:flex">
-        <Sparkles className="size-4 text-brand-300" />
-        <span className="text-lg font-bold" dir="ltr">{f.percent(-0.38)}</span>
-        <span className="text-[10px] text-slate-300">{v.noShowsLabel}</span>
       </div>
     </div>
   )
